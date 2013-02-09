@@ -2,38 +2,138 @@
 
 class TPLspace
 {
-	var $dstpath;
-	var $srcpath;
-	var $startline;
-	var $endline;
+	var $tmpdir;
+	var $tpl;
+	var $src; // source file
+	var $dst; // destination file
+	var $data_arrays; // array with callbacks
 	var $namespace; // namespace current tpl
-	var $sub; // sub tpl space
-	function __construct ()
+	// subtpl
+	var $subspace; // sub namespace
+	var $startline;
+	function __construct ($tpl, $srcfile, $namespace, $_data_arrays, $tmpdir, $offset = -1, $length = NULL)
 	{
+		$this->src = $srcfile;
+		$this->tpl = $tpl;
+		$this->data_arrays = $_data_arrays;
+		// TODO write file, process
+		if ($offset == -1)
+		{
+			$this->dst = $srcfile;
+		}
+		else
+		{
+			// generate filename
+			$this->dst = $tmpdir . "subtpl." . $tpl . "@" . $namespace . ".php";
+			// generate content
+			$conte = file ($srcfile);
+			if (!$conte)
+			{
+				errors_push (ERSYS::TPL, ERLEV::ERROR, "can't read file '" . $srcfile . "', need for template '" . $tpl . "', namespace '" . $namespace . "'");
+				return;
+			}
+			$conte = array_slice ($conte, $offset, $length);
+			if (!file_put_contents ($this->dst, implode ("\n", $conte))
+			{
+				errors_push (ERSYS::TPL, ERLEV::ERROR, "can't write file '" . $this->dst . "', need for template '" . $tpl . ", namespace '" . $namespace . "'");
+				return;
+			}
+		}
+
 	}
 	
 	function __destruct ()
 	{
+		if ($this->dst != $this->src)
+			unset ($this->dst);
 	}
 	
-	function call_data ($namespace)
+	function call_data ()
 	{
-	}
-
-	function array_prep ($space, $lineno)
-	{
-		// TODO: alloc new tplspace, gen filename
-	}
-
-	function array_proc ($space, $lineno)
-	{
-		// TODO:write subtemplate, proccess file
-		$array_data = $this->call_data ($this->namespace);
-		while (($_data = array_shift ($array_data)))
+		if (in_array ($this->namespace, $this->data_arrays))
 		{
-			include ($this->filename);
+			$data = call_user_func ($this->data_arrays[$this->namespace], $this->namespace);
+			if (!empty ($data))
+				return $data;
 		}
-	}	
+		errors_push (ERSYS::TPL, ERLEV::WARN, "template '" . $this->tpl . "' (namespace '" . $this->namespace . "') has no data");
+		return array ();
+	}
+
+	function sub_prep ($space, $lineno)
+	{
+		// skip another spacename
+		if (!$this->space)
+		{
+			$this->subspace = $space;
+			$this->startline = $lineno;
+		}
+		elseif ($this->space == $space)
+		{
+			errors_push (ERSYS::TPL, ERLEV::WARN, "template '" . $this->tpl . "'(namespace '" . $this->namespace . "." $space"') has more than one header");
+		}
+
+	}
+
+	function sub_proc ($space, $lineno)
+	{
+		$subtpl = NULL;
+		if (empty ($this->subspace))
+		{
+			errors_push (ERSYS::TPL, ERLEV::WARN, "header for namespace '" . $this->namespace . "." . $space "' not defined in template '" . $this->tpl . "'");
+			return;
+		}
+		// skip another subsubtpl
+		if ($this->subspace != $space)
+			return;
+		/* TODO: allow filename */
+		$subtpl = new TPLspace ($this->tpl, $this->dst, $this->namespace . "." . $space, $this->data_arrays, $this->startline, $this->startline - $lineno);
+		$subtpl->proc ();
+	}
+
+	function proc ()
+	{
+		// opts
+		$_ = array ();
+		$repeat = false;
+		// if array from args is not array, try use self root data
+		$_data = $this->call_data ($this->namespace);
+		// check opts
+		if (is_array ($_data))
+		{
+			if (in_array ("_", $_data))
+			{
+				if (is_array ($_data["_"]))
+				{
+					$_ = $_data["_"];
+					if (in_array ("repeat", $_) && $_["repeat"] === true)
+						$repeat = true;
+				}
+				unset ($_date["_"]);
+			}
+		}
+		if ($repeat)
+		{
+			// repeat
+			while (($__data == array_shift ($_data)))
+			{
+				if (
+				$data = $__data;
+				unset $__data;
+				if (!include ($this->src))
+					errors_push (ERSYS::TPL, ERLEV::WARN, "template '" . $this->tpl . "' (namespace '" . $this->namespace . "'), include ('" . $this->src . "') failed");
+			}
+		}
+		else
+		{
+			// simple include
+			// pass $data to tpl
+			$data = $_data;
+			unset ($_data);
+			if (!include ($this->src))
+				errors_push (ERSYS::TPL, ERLEV::WARN, "template '" . $this->tpl . "' (namespace '" . $this->namespace . "'), include ('" . $this->src . "') failed");
+		}
+	}
 };
 
 class TPL
